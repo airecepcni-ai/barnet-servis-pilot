@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-type Section = "Přehled" | "Zakázky" | "Asistent" | "Fakturace";
+type Section = "Přehled" | "Zakázky" | "Asistent" | "Knihovna" | "Fakturace";
 
 type Job = {
   id: string;
@@ -56,6 +56,7 @@ const navItems: { label: Section; icon: string }[] = [
   { label: "Přehled", icon: "⌂" },
   { label: "Zakázky", icon: "▣" },
   { label: "Asistent", icon: "✦" },
+  { label: "Knihovna", icon: "▤" },
   { label: "Fakturace", icon: "₭" },
 ];
 
@@ -132,6 +133,7 @@ export default function Home() {
         {section === "Přehled" && <Overview onSelectJob={selectJob} onNavigate={setSection} />}
         {section === "Zakázky" && <Jobs selectedJob={selectedJob} onSelectJob={setSelectedJob} onNotify={notify} />}
         {section === "Asistent" && <Assistant question={assistantQuestion} onQuestion={setAssistantQuestion} onUse={notify} />}
+        {section === "Knihovna" && <Library onNotify={notify} />}
         {section === "Fakturace" && <Billing onOpen={selectJob} onNotify={notify} />}
       </section>
 
@@ -228,14 +230,81 @@ function JobDetail({ job, onNotify }: { job: Job; onNotify: (message: string) =>
 
 function Assistant({ question, onQuestion, onUse }: { question: string; onQuestion: (value: string) => void; onUse: (message: string) => void }) {
   const [attachment, setAttachment] = useState<{ name: string; url: string } | null>(null);
+  const [libraryAnswer, setLibraryAnswer] = useState<{ answer: string; sources: string[] } | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState("");
+
+  const askLibrary = async () => {
+    setAsking(true);
+    setAskError("");
+    try {
+      const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) });
+      const payload = await response.json() as { answer?: string; sources?: string[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || "Asistent teď není dostupný.");
+      setLibraryAnswer({ answer: payload.answer || "Nenašel jsem odpověď.", sources: payload.sources || [] });
+      onUse("Asistent odpověděl podle nahrané knihovny.");
+    } catch (error) {
+      setAskError(error instanceof Error ? error.message : "Asistent teď není dostupný.");
+    } finally {
+      setAsking(false);
+    }
+  };
 
   return <div className="assistant-layout">
     <section className="assistant-intro"><div className="ai-orb">✦</div><p className="eyebrow">Barnet servisní asistent</p><h2>Najde řešení,<br /><em>ne dohady.</em></h2><p>Vyhledává pouze v servisní dokumentaci a ověřených případech vašeho týmu.</p><div className="trust-line"><span>✓</span> Každý návrh uvádí zdroj</div></section>
     <section className="panel assistant-chat">
-      <div className="chat-question"><span>Vyhledat v dokumentaci a opravách</span><textarea value={question} onChange={(event) => onQuestion(event.target.value)} aria-label="Dotaz pro servisního asistenta" /><div className="attachment-bar">{!attachment ? <label className="attach-button">▧ Přiložit fotku zapojení<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) setAttachment({ name: file.name, url: URL.createObjectURL(file) }); }} /></label> : <div className="attachment-preview"><img src={attachment.url} alt="Náhled přiložené fotky" /><span><strong>{attachment.name}</strong><small>Fotka je přiložená k dotazu</small></span><button aria-label="Odebrat přiloženou fotku" onClick={() => setAttachment(null)}>×</button></div>}<span className="attachment-hint">AI porovná fotku s manuálem a případy</span></div><button className="send-button" onClick={() => onUse(attachment ? "Asistent vyhodnotil přiloženou fotku spolu s 18 ověřenými zdroji." : "Asistent prohledal 18 ověřených zdrojů.")}>↑</button></div>
+      <div className="chat-question"><span>Vyhledat v dokumentaci a opravách</span><textarea value={question} onChange={(event) => onQuestion(event.target.value)} aria-label="Dotaz pro servisního asistenta" /><div className="attachment-bar">{!attachment ? <label className="attach-button">▧ Přiložit fotku zapojení<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) setAttachment({ name: file.name, url: URL.createObjectURL(file) }); }} /></label> : <div className="attachment-preview"><img src={attachment.url} alt="Náhled přiložené fotky" /><span><strong>{attachment.name}</strong><small>Fotka je přiložená k dotazu</small></span><button aria-label="Odebrat přiloženou fotku" onClick={() => setAttachment(null)}>×</button></div>}<span className="attachment-hint">AI porovná fotku s manuálem a případy</span></div><button className="send-button" onClick={askLibrary} disabled={asking} aria-label="Odeslat dotaz do servisní knihovny">{asking ? "…" : "↑"}</button></div>
       <div className="assistant-answer"><div className="answer-heading"><div className="mini-ai">✦</div><div><strong>Nejpravděpodobnější postup</strong><span>Ověřeno ve 4 podobných případech</span></div><span className="confidence">Vysoká shoda</span></div><p>U modelů New Holland T6 se při kolísání otáček po zahřátí opakovaně potvrdil problém v okruhu snímače otáček klikové hřídele.</p><ol><li>Načti aktivní a uložené chybové kódy.</li><li>Zkontroluj konektor a kabeláž snímače při zahřátém motoru.</li><li>Proměř odpor snímače podle servisního manuálu.</li><li>Po výměně smaž kódy a proveď zkušební start za tepla.</li></ol><div className="sources"><p>ZDROJE</p><button>ZS-2026-096 · New Holland T6.175 <span>↗</span></button><button>Manuál New Holland T6 · Kapitola 10.4 <span>↗</span></button><button>ZS-2025-212 · New Holland T6.160 <span>↗</span></button></div><div className="answer-actions"><button className="secondary-button" onClick={() => onUse("Postup byl přidán do této zakázky.")}>＋ Přidat do zakázky</button><button className="quiet-button" onClick={() => onUse("Děkujeme — zpětná vazba byla zaznamenána.")}>Je to užitečné? <span>👍</span></button></div></div>
     </section>
+    {askError && <div className="assistant-error" role="alert">{askError}</div>}
+    {libraryAnswer && <section className="panel live-answer"><div className="answer-heading"><div className="mini-ai">✦</div><div><strong>Odpověď z nahrané knihovny</strong><span>Ověřeno pouze v dostupných podkladech</span></div></div><p>{libraryAnswer.answer}</p><div className="sources"><p>ZDROJE Z KNIHOVNY</p>{libraryAnswer.sources.length > 0 ? libraryAnswer.sources.map((source) => <button key={source}>{source} <span>↗</span></button>) : <span className="no-sources">V odpovědi nebyl nalezen citovatelný zdroj.</span>}</div></section>}
   </div>;
+}
+
+type LibraryFile = { id: string; fileName: string; sizeBytes: number; status: string; errorMessage: string | null; createdAt: string };
+
+function Library({ onNotify }: { onNotify: (message: string) => void }) {
+  const [files, setFiles] = useState<LibraryFile[]>([]);
+  const [configured, setConfigured] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  const refresh = async () => {
+    try {
+      const response = await fetch("/api/library");
+      const payload = await response.json() as { files?: LibraryFile[]; configured?: boolean; error?: string };
+      if (!response.ok) throw new Error(payload.error || "Knihovnu se nepodařilo načíst.");
+      setFiles(payload.files || []);
+      setConfigured(Boolean(payload.configured));
+    } catch (issue) {
+      setError(issue instanceof Error ? issue.message : "Knihovnu se nepodařilo načíst.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void refresh(); }, []);
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    setError("");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const response = await fetch("/api/library", { method: "POST", body: form });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Soubor se nepodařilo nahrát.");
+      await refresh();
+      onNotify("Podklad je v knihovně a připravuje se pro asistenta.");
+    } catch (issue) {
+      setError(issue instanceof Error ? issue.message : "Soubor se nepodařilo nahrát.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return <div className="library-layout"><section className="library-hero"><p className="eyebrow">Znalostní základna týmu</p><h2>Servisní knihovna</h2><p>Nahraj manuály, schémata a ověřené servisní postupy. Asistent bude odpovídat jen z těchto materiálů.</p><span className={`library-state ${configured ? "ready" : "waiting"}`}>{configured ? "● AI je připravená" : "● Čeká na zabezpečené nastavení AI"}</span></section><section className="panel library-panel"><div className="panel-heading"><div><p className="eyebrow">Dokumentace</p><h2>Nahrané podklady</h2></div><button className="quiet-button" onClick={() => void refresh()}>↻ Obnovit</button></div><label className={`upload-zone ${uploading ? "busy" : ""}`}><input type="file" accept=".pdf,.docx,.txt,.md,application/pdf" disabled={uploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); event.currentTarget.value = ""; }} /><strong>{uploading ? "Nahrávám a připravuji dokument…" : "＋ Nahrát servisní podklad"}</strong><span>PDF, DOCX, TXT nebo MD · maximálně 30 MB</span></label>{error && <div className="library-error" role="alert">{error}</div>}<div className="library-files">{loading ? <p>Načítám knihovnu…</p> : files.length === 0 ? <div className="empty-library"><span>▤</span><strong>Knihovna je zatím prázdná</strong><p>Začni jedním manuálem New Holland nebo Valtra a hned ho vyzkoušej v asistentovi.</p></div> : files.map((file) => <div className="library-file" key={file.id}><div className="file-icon">PDF</div><div><strong>{file.fileName}</strong><span>{Math.max(1, Math.round(file.sizeBytes / 1024 / 1024 * 10) / 10)} MB · nahráno {new Date(file.createdAt).toLocaleDateString("cs-CZ")}</span>{file.errorMessage && <small>{file.errorMessage}</small>}</div><span className={`file-status ${file.status}`}>{file.status === "completed" ? "Připraveno" : file.status === "failed" ? "Chyba" : "Zpracovává se"}</span></div>)}</div></section></div>;
 }
 
 function Billing({ onOpen, onNotify }: { onOpen: (job: Job) => void; onNotify: (message: string) => void }) {
