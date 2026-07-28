@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Section = "Přehled" | "Zakázky" | "Asistent" | "Knihovna" | "Fakturace";
 
@@ -70,6 +70,7 @@ export default function Home() {
   const [showNewJob, setShowNewJob] = useState(false);
   const [toast, setToast] = useState("");
   const [assistantQuestion, setAssistantQuestion] = useState("Kolísání otáček po zahřátí motoru");
+  const [testApiKey, setTestApiKey] = useState("");
 
   const notify = (message: string) => {
     setToast(message);
@@ -132,8 +133,9 @@ export default function Home() {
 
         {section === "Přehled" && <Overview onSelectJob={selectJob} onNavigate={setSection} />}
         {section === "Zakázky" && <Jobs selectedJob={selectedJob} onSelectJob={setSelectedJob} onNotify={notify} />}
-        {section === "Asistent" && <Assistant question={assistantQuestion} onQuestion={setAssistantQuestion} onUse={notify} />}
-        {section === "Knihovna" && <Library onNotify={notify} />}
+        {section === "Asistent" && <Assistant question={assistantQuestion} onQuestion={setAssistantQuestion} onUse={notify} testApiKey={testApiKey} />}
+        {section === "Knihovna" && <TestApiKeyGate testApiKey={testApiKey} onSetTestApiKey={setTestApiKey} onNotify={notify} />}
+        {section === "Knihovna" && <Library onNotify={notify} testApiKey={testApiKey} />}
         {section === "Fakturace" && <Billing onOpen={selectJob} onNotify={notify} />}
       </section>
 
@@ -228,8 +230,8 @@ function JobDetail({ job, onNotify }: { job: Job; onNotify: (message: string) =>
   </section>;
 }
 
-function Assistant({ question, onQuestion, onUse }: { question: string; onQuestion: (value: string) => void; onUse: (message: string) => void }) {
-  const [attachment, setAttachment] = useState<{ name: string; url: string } | null>(null);
+function Assistant({ question, onQuestion, onUse, testApiKey }: { question: string; onQuestion: (value: string) => void; onUse: (message: string) => void; testApiKey: string }) {
+  const [attachment, setAttachment] = useState<{ name: string; url: string; dataUrl: string } | null>(null);
   const [libraryAnswer, setLibraryAnswer] = useState<{ answer: string; sources: string[] } | null>(null);
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState("");
@@ -238,7 +240,11 @@ function Assistant({ question, onQuestion, onUse }: { question: string; onQuesti
     setAsking(true);
     setAskError("");
     try {
-      const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) });
+      const response = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(testApiKey ? { "X-OpenAI-API-Key": testApiKey } : {}) },
+        body: JSON.stringify({ question, imageDataUrl: attachment?.dataUrl }),
+      });
       const payload = await response.json() as { answer?: string; sources?: string[]; error?: string };
       if (!response.ok) throw new Error(payload.error || "Asistent teď není dostupný.");
       setLibraryAnswer({ answer: payload.answer || "Nenašel jsem odpověď.", sources: payload.sources || [] });
@@ -253,7 +259,7 @@ function Assistant({ question, onQuestion, onUse }: { question: string; onQuesti
   return <div className="assistant-layout">
     <section className="assistant-intro"><div className="ai-orb">✦</div><p className="eyebrow">Barnet servisní asistent</p><h2>Najde řešení,<br /><em>ne dohady.</em></h2><p>Vyhledává pouze v servisní dokumentaci a ověřených případech vašeho týmu.</p><div className="trust-line"><span>✓</span> Každý návrh uvádí zdroj</div></section>
     <section className="panel assistant-chat">
-      <div className="chat-question"><span>Vyhledat v dokumentaci a opravách</span><textarea value={question} onChange={(event) => onQuestion(event.target.value)} aria-label="Dotaz pro servisního asistenta" /><div className="attachment-bar">{!attachment ? <label className="attach-button">▧ Přiložit fotku zapojení<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) setAttachment({ name: file.name, url: URL.createObjectURL(file) }); }} /></label> : <div className="attachment-preview"><img src={attachment.url} alt="Náhled přiložené fotky" /><span><strong>{attachment.name}</strong><small>Fotka je přiložená k dotazu</small></span><button aria-label="Odebrat přiloženou fotku" onClick={() => setAttachment(null)}>×</button></div>}<span className="attachment-hint">AI porovná fotku s manuálem a případy</span></div><button className="send-button" onClick={askLibrary} disabled={asking} aria-label="Odeslat dotaz do servisní knihovny">{asking ? "…" : "↑"}</button></div>
+      <div className="chat-question"><span>Vyhledat v dokumentaci a opravách</span><textarea value={question} onChange={(event) => onQuestion(event.target.value)} aria-label="Dotaz pro servisního asistenta" /><div className="attachment-bar">{!attachment ? <label className="attach-button">▧ Přiložit fotku zapojení<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { if (typeof reader.result === "string") setAttachment({ name: file.name, url: URL.createObjectURL(file), dataUrl: reader.result }); }; reader.readAsDataURL(file); }} /></label> : <div className="attachment-preview"><img src={attachment.url} alt="Náhled přiložené fotky" /><span><strong>{attachment.name}</strong><small>Fotka je přiložená k dotazu</small></span><button aria-label="Odebrat přiloženou fotku" onClick={() => setAttachment(null)}>×</button></div>}<span className="attachment-hint">AI porovná fotku s manuálem a případy</span></div><button className="send-button" onClick={askLibrary} disabled={asking} aria-label="Odeslat dotaz do servisní knihovny">{asking ? "…" : "↑"}</button></div>
       <div className="assistant-answer"><div className="answer-heading"><div className="mini-ai">✦</div><div><strong>Nejpravděpodobnější postup</strong><span>Ověřeno ve 4 podobných případech</span></div><span className="confidence">Vysoká shoda</span></div><p>U modelů New Holland T6 se při kolísání otáček po zahřátí opakovaně potvrdil problém v okruhu snímače otáček klikové hřídele.</p><ol><li>Načti aktivní a uložené chybové kódy.</li><li>Zkontroluj konektor a kabeláž snímače při zahřátém motoru.</li><li>Proměř odpor snímače podle servisního manuálu.</li><li>Po výměně smaž kódy a proveď zkušební start za tepla.</li></ol><div className="sources"><p>ZDROJE</p><button>ZS-2026-096 · New Holland T6.175 <span>↗</span></button><button>Manuál New Holland T6 · Kapitola 10.4 <span>↗</span></button><button>ZS-2025-212 · New Holland T6.160 <span>↗</span></button></div><div className="answer-actions"><button className="secondary-button" onClick={() => onUse("Postup byl přidán do této zakázky.")}>＋ Přidat do zakázky</button><button className="quiet-button" onClick={() => onUse("Děkujeme — zpětná vazba byla zaznamenána.")}>Je to užitečné? <span>👍</span></button></div></div>
     </section>
     {askError && <div className="assistant-error" role="alert">{askError}</div>}
@@ -263,16 +269,26 @@ function Assistant({ question, onQuestion, onUse }: { question: string; onQuesti
 
 type LibraryFile = { id: string; fileName: string; sizeBytes: number; status: string; errorMessage: string | null; createdAt: string };
 
-function Library({ onNotify }: { onNotify: (message: string) => void }) {
+function TestApiKeyGate({ testApiKey, onSetTestApiKey, onNotify }: { testApiKey: string; onSetTestApiKey: (value: string) => void; onNotify: (message: string) => void }) {
+  const [draft, setDraft] = useState("");
+
+  if (testApiKey) {
+    return <section className="panel" style={{ marginTop: 18, padding: "22px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, flexWrap: "wrap", borderColor: "#cfe2d5" }}><div><p className="eyebrow">Testovací připojení</p><h2 style={{ margin: "0 0 7px", fontSize: 19 }}>AI je zapnutá jen pro tuto kartu</h2><p style={{ margin: 0, color: "#657f87", fontSize: 12, lineHeight: 1.5 }}>Klíč není uložený v aplikaci ani v databázi. Po obnovení nebo zavření karty se smaže.</p></div><button className="quiet-button" onClick={() => { onSetTestApiKey(""); onNotify("Testovací klíč byl z této karty odebrán."); }}>Odebrat klíč</button></section>;
+  }
+
+  return <section className="panel" style={{ marginTop: 18, padding: "22px 24px", display: "flex", alignItems: "end", justifyContent: "space-between", gap: 18, flexWrap: "wrap", background: "#fbfdfd" }}><div style={{ maxWidth: 510 }}><p className="eyebrow">Jednorázový test AI</p><h2 style={{ margin: "0 0 7px", fontSize: 19 }}>Zapni knihovnu pro tento test</h2><p style={{ margin: 0, color: "#657f87", fontSize: 12, lineHeight: 1.5 }}>Klíč použijeme pouze při odeslání souboru nebo dotazu. Neuloží se do aplikace, databáze ani do prohlížeče.</p></div><div style={{ display: "flex", alignItems: "end", gap: 9, flexWrap: "wrap" }}><label style={{ color: "#597080", fontSize: 11, fontWeight: 700 }}>OpenAI API klíč<input style={{ display: "block", width: 240, marginTop: 7, padding: 10, border: "1px solid #d7e0df", borderRadius: 8, color: "#24445b", fontSize: 12 }} type="password" value={draft} onChange={(event) => setDraft(event.target.value)} autoComplete="off" spellCheck={false} placeholder="sk-…" /></label><button className="primary-button" disabled={!draft.trim()} onClick={() => { const key = draft.trim(); if (!key) return; onSetTestApiKey(key); setDraft(""); onNotify("Testovací AI je připravená. Klíč se smaže po obnovení nebo zavření karty."); }}>Zapnout test</button></div></section>;
+}
+
+function Library({ onNotify, testApiKey }: { onNotify: (message: string) => void; testApiKey: string }) {
   const [files, setFiles] = useState<LibraryFile[]>([]);
   const [configured, setConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     try {
-      const response = await fetch("/api/library");
+      const response = await fetch("/api/library", { headers: testApiKey ? { "X-OpenAI-API-Key": testApiKey } : {} });
       const payload = await response.json() as { files?: LibraryFile[]; configured?: boolean; error?: string };
       if (!response.ok) throw new Error(payload.error || "Knihovnu se nepodařilo načíst.");
       setFiles(payload.files || []);
@@ -282,9 +298,12 @@ function Library({ onNotify }: { onNotify: (message: string) => void }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [testApiKey]);
 
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void refresh(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [refresh]);
 
   const upload = async (file: File) => {
     setUploading(true);
@@ -292,7 +311,7 @@ function Library({ onNotify }: { onNotify: (message: string) => void }) {
     try {
       const form = new FormData();
       form.append("file", file);
-      const response = await fetch("/api/library", { method: "POST", body: form });
+      const response = await fetch("/api/library", { method: "POST", headers: testApiKey ? { "X-OpenAI-API-Key": testApiKey } : {}, body: form });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || "Soubor se nepodařilo nahrát.");
       await refresh();

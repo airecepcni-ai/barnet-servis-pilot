@@ -31,8 +31,19 @@ export function getRuntimeEnv() {
   return runtime;
 }
 
-export function isAiConfigured() {
-  return Boolean((workerEnv as unknown as RuntimeEnv).OPENAI_API_KEY);
+export function getOpenAiApiKey(request?: Request) {
+  const serverKey = (workerEnv as unknown as RuntimeEnv).OPENAI_API_KEY?.trim();
+  if (serverKey) return serverKey;
+  return request?.headers.get("x-openai-api-key")?.trim() || null;
+}
+
+export function isAiConfigured(request?: Request) {
+  return Boolean(getOpenAiApiKey(request));
+}
+
+export function getAiMode(request?: Request) {
+  if ((workerEnv as unknown as RuntimeEnv).OPENAI_API_KEY?.trim()) return "server";
+  return getOpenAiApiKey(request) ? "session" : "none";
 }
 
 export async function ensureKnowledgeSchema() {
@@ -85,16 +96,11 @@ export async function insertLibraryFile(record: LibraryRecord) {
   ).run();
 }
 
-function openAiConfig() {
-  const runtime = getRuntimeEnv();
-  if (!runtime.OPENAI_API_KEY) {
-    throw new Error("AI zatím není aktivní. Chybí zabezpečený klíč OpenAI API.");
+export async function openAiRequest<T>(path: string, init: RequestInit, apiKey?: string | null) {
+  const key = apiKey || getOpenAiApiKey();
+  if (!key) {
+    throw new Error("AI zatím není aktivní. Zadej testovací klíč OpenAI API.");
   }
-  return { key: runtime.OPENAI_API_KEY, model: runtime.OPENAI_MODEL || "gpt-5.6-terra" };
-}
-
-export async function openAiRequest<T>(path: string, init: RequestInit) {
-  const { key } = openAiConfig();
   const response = await fetch(`https://api.openai.com${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${key}`, ...(init.headers ?? {}) },
@@ -106,7 +112,7 @@ export async function openAiRequest<T>(path: string, init: RequestInit) {
   return payload;
 }
 
-export async function getOrCreateVectorStore() {
+export async function getOrCreateVectorStore(apiKey?: string | null) {
   await ensureKnowledgeSchema();
   const stored = await readSetting("openai_vector_store_id");
   if (stored) return stored;
@@ -115,11 +121,11 @@ export async function getOrCreateVectorStore() {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: "Barnet servisní knihovna" }),
-  });
+  }, apiKey);
   await writeSetting("openai_vector_store_id", created.id);
   return created.id;
 }
 
 export function getConfiguredModel() {
-  return openAiConfig().model;
+  return getRuntimeEnv().OPENAI_MODEL || "gpt-5.6-terra";
 }

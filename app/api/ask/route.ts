@@ -1,4 +1,4 @@
-import { ensureKnowledgeSchema, getConfiguredModel, getOrCreateVectorStore, isAiConfigured, openAiRequest, readSetting } from "../../../lib/knowledge";
+import { ensureKnowledgeSchema, getConfiguredModel, getOpenAiApiKey, getOrCreateVectorStore, openAiRequest, readSetting } from "../../../lib/knowledge";
 
 export const runtime = "edge";
 
@@ -18,7 +18,8 @@ function extractSources(output: ResponseOutput[]) {
 
 export async function POST(request: Request) {
   try {
-    if (!isAiConfigured()) return Response.json({ error: "AI zatím není aktivní. Chybí zabezpečený klíč OpenAI API." }, { status: 503 });
+    const apiKey = getOpenAiApiKey(request);
+    if (!apiKey) return Response.json({ error: "Pro test nejdřív zadej jednorázový OpenAI API klíč v knihovně." }, { status: 503 });
     const body = await request.json() as { question?: string; imageDataUrl?: string };
     const question = body.question?.trim();
     if (!question) return Response.json({ error: "Napiš otázku pro servisního asistenta." }, { status: 400 });
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
     await ensureKnowledgeSchema();
     const existingStore = await readSetting("openai_vector_store_id");
     if (!existingStore) return Response.json({ error: "Nejdřív nahraj alespoň jeden servisní podklad do knihovny." }, { status: 409 });
-    const vectorStoreId = await getOrCreateVectorStore();
+    const vectorStoreId = await getOrCreateVectorStore(apiKey);
     const content: Array<Record<string, string>> = [{ type: "input_text", text: question }];
     if (body.imageDataUrl) content.push({ type: "input_image", image_url: body.imageDataUrl });
 
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
         include: ["file_search_call.results"],
         max_output_tokens: 700,
       }),
-    });
+    }, apiKey);
 
     const output = result.output ?? [];
     return Response.json({ answer: extractAnswer(output) || "V nahrané knihovně jsem zatím nenašel dost podkladů pro bezpečnou odpověď.", sources: extractSources(output) });

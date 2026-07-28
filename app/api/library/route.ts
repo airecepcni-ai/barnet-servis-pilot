@@ -1,9 +1,10 @@
 import {
   ensureKnowledgeSchema,
+  getAiMode,
+  getOpenAiApiKey,
   getOrCreateVectorStore,
   getRuntimeEnv,
   insertLibraryFile,
-  isAiConfigured,
   listLibraryFiles,
   openAiRequest,
   updateLibraryFile,
@@ -14,17 +15,18 @@ export const runtime = "edge";
 const MAX_FILE_SIZE = 30 * 1024 * 1024;
 const SUPPORTED_EXTENSIONS = /\.(pdf|docx|txt|md)$/i;
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await ensureKnowledgeSchema();
     const files = await listLibraryFiles();
+    const apiKey = getOpenAiApiKey(request);
 
-    if (isAiConfigured()) {
+    if (apiKey) {
       const pending = files.filter((file) => file.vectorStoreFileId && ["uploading", "in_progress"].includes(file.status));
       for (const file of pending.slice(0, 20)) {
         try {
-          const vectorStoreId = await getOrCreateVectorStore();
-          const remote = await openAiRequest<{ status?: string }>(`/v1/vector_stores/${vectorStoreId}/files/${file.vectorStoreFileId}`, { method: "GET" });
+          const vectorStoreId = await getOrCreateVectorStore(apiKey);
+          const remote = await openAiRequest<{ status?: string }>(`/v1/vector_stores/${vectorStoreId}/files/${file.vectorStoreFileId}`, { method: "GET" }, apiKey);
           if (remote.status && remote.status !== file.status) await updateLibraryFile(file.id, { status: remote.status });
         } catch {
           // A list request should remain useful even if one file is still processing.
@@ -32,7 +34,7 @@ export async function GET() {
       }
     }
 
-    return Response.json({ configured: isAiConfigured(), files: await listLibraryFiles() });
+    return Response.json({ configured: Boolean(apiKey), mode: getAiMode(request), files: await listLibraryFiles() });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Knihovnu se nepodařilo načíst." }, { status: 500 });
   }
@@ -40,8 +42,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    if (!isAiConfigured()) {
-      return Response.json({ error: "Nejdřív je potřeba nastavit zabezpečený klíč OpenAI API." }, { status: 503 });
+    const apiKey = getOpenAiApiKey(request);
+    if (!apiKey) {
+      return Response.json({ error: "Pro test nejdřív zadej jednorázový OpenAI API klíč." }, { status: 503 });
     }
 
     const data = await request.formData();
@@ -76,13 +79,13 @@ export async function POST(request: Request) {
     const upload = new FormData();
     upload.append("purpose", "assistants");
     upload.append("file", new File([bytes], file.name, { type: file.type || "application/octet-stream" }));
-    const openAiFile = await openAiRequest<{ id: string }>("/v1/files", { method: "POST", body: upload });
-    const vectorStoreId = await getOrCreateVectorStore();
+    const openAiFile = await openAiRequest<{ id: string }>("/v1/files", { method: "POST", body: upload }, apiKey);
+    const vectorStoreId = await getOrCreateVectorStore(apiKey);
     const vectorFile = await openAiRequest<{ id: string; status?: string }>(`/v1/vector_stores/${vectorStoreId}/files`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ file_id: openAiFile.id }),
-    });
+    }, apiKey);
 
     await updateLibraryFile(id, {
       openaiFileId: openAiFile.id,
