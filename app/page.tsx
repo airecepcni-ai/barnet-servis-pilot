@@ -256,14 +256,36 @@ function Assistant({ question, onQuestion, onUse, testApiKey }: { question: stri
     }
   };
 
-  return <div className="assistant-layout">
-    <section className="assistant-intro"><div className="ai-orb">✦</div><p className="eyebrow">Barnet servisní asistent</p><h2>Najde řešení,<br /><em>ne dohady.</em></h2><p>Vyhledává pouze v servisní dokumentaci a ověřených případech vašeho týmu.</p><div className="trust-line"><span>✓</span> Každý návrh uvádí zdroj</div></section>
-    <section className="panel assistant-chat">
-      <div className="chat-question"><span>Vyhledat v dokumentaci a opravách</span><textarea value={question} onChange={(event) => onQuestion(event.target.value)} aria-label="Dotaz pro servisního asistenta" /><div className="attachment-bar">{!attachment ? <label className="attach-button">▧ Přiložit fotku zapojení<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { if (typeof reader.result === "string") setAttachment({ name: file.name, url: URL.createObjectURL(file), dataUrl: reader.result }); }; reader.readAsDataURL(file); }} /></label> : <div className="attachment-preview"><img src={attachment.url} alt="Náhled přiložené fotky" /><span><strong>{attachment.name}</strong><small>Fotka je přiložená k dotazu</small></span><button aria-label="Odebrat přiloženou fotku" onClick={() => setAttachment(null)}>×</button></div>}<span className="attachment-hint">AI porovná fotku s manuálem a případy</span></div><button className="send-button" onClick={askLibrary} disabled={asking} aria-label="Odeslat dotaz do servisní knihovny">{asking ? "…" : "↑"}</button></div>
-      <div className="assistant-answer"><div className="answer-heading"><div className="mini-ai">✦</div><div><strong>Nejpravděpodobnější postup</strong><span>Ověřeno ve 4 podobných případech</span></div><span className="confidence">Vysoká shoda</span></div><p>U modelů New Holland T6 se při kolísání otáček po zahřátí opakovaně potvrdil problém v okruhu snímače otáček klikové hřídele.</p><ol><li>Načti aktivní a uložené chybové kódy.</li><li>Zkontroluj konektor a kabeláž snímače při zahřátém motoru.</li><li>Proměř odpor snímače podle servisního manuálu.</li><li>Po výměně smaž kódy a proveď zkušební start za tepla.</li></ol><div className="sources"><p>ZDROJE</p><button>ZS-2026-096 · New Holland T6.175 <span>↗</span></button><button>Manuál New Holland T6 · Kapitola 10.4 <span>↗</span></button><button>ZS-2025-212 · New Holland T6.160 <span>↗</span></button></div><div className="answer-actions"><button className="secondary-button" onClick={() => onUse("Postup byl přidán do této zakázky.")}>＋ Přidat do zakázky</button><button className="quiet-button" onClick={() => onUse("Děkujeme — zpětná vazba byla zaznamenána.")}>Je to užitečné? <span>👍</span></button></div></div>
+  return <div className="assistant-layout" style={{ gridTemplateColumns: "minmax(0, 1fr)", gap: 16, maxWidth: 1080 }}>
+    <section className="assistant-intro" style={{ minHeight: 0, padding: "27px 31px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, flexWrap: "wrap" }}>
+      <div className="assistant-title" style={{ display: "flex", alignItems: "center", gap: 17 }}>
+        <div className="ai-orb" style={{ margin: 0, flex: "0 0 auto" }}>✦</div>
+        <div>
+          <p className="eyebrow">Barnet servisní asistent</p>
+          <h2 style={{ margin: 0, fontSize: 27 }}>Najde řešení, <em>ne dohady.</em></h2>
+        </div>
+      </div>
+      <p style={{ margin: 0, maxWidth: 430 }}>Vyhledává pouze v servisní dokumentaci a ověřených případech vašeho týmu. Každý návrh uvádí zdroj.</p>
     </section>
+
+    <section className="panel assistant-chat" style={{ padding: 18 }}>
+      <div className="chat-question">
+        <span>Vyhledat v dokumentaci a opravách</span>
+        <textarea style={{ minHeight: 80, fontSize: 15 }} value={question} onChange={(event) => onQuestion(event.target.value)} aria-label="Dotaz pro servisního asistenta" />
+        <div className="attachment-bar">
+          {!attachment ? <label className="attach-button">▧ Přiložit fotku zapojení<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { if (typeof reader.result === "string") setAttachment({ name: file.name, url: URL.createObjectURL(file), dataUrl: reader.result }); }; reader.readAsDataURL(file); }} /></label> : <div className="attachment-preview"><img src={attachment.url} alt="Náhled přiložené fotky" /><span><strong>{attachment.name}</strong><small>Fotka je přiložená k dotazu</small></span><button aria-label="Odebrat přiloženou fotku" onClick={() => setAttachment(null)}>×</button></div>}
+          <span className="attachment-hint">AI porovná fotku s manuálem a případy</span>
+        </div>
+        <button className="send-button" onClick={askLibrary} disabled={asking} aria-label="Odeslat dotaz do servisní knihovny">{asking ? "…" : "↑"}</button>
+      </div>
+    </section>
+
     {askError && <div className="assistant-error" role="alert">{askError}</div>}
-    {libraryAnswer && <section className="panel live-answer"><div className="answer-heading"><div className="mini-ai">✦</div><div><strong>Odpověď z nahrané knihovny</strong><span>Ověřeno pouze v dostupných podkladech</span></div></div><p>{libraryAnswer.answer}</p><div className="sources"><p>ZDROJE Z KNIHOVNY</p>{libraryAnswer.sources.length > 0 ? libraryAnswer.sources.map((source) => <button key={source}>{source} <span>↗</span></button>) : <span className="no-sources">V odpovědi nebyl nalezen citovatelný zdroj.</span>}</div></section>}
+
+    <section className="panel live-answer" style={{ marginTop: 0, padding: "25px 28px", minHeight: 170 }}>
+      <div className="answer-heading"><div className="mini-ai">✦</div><div><strong>Odpověď ze servisní knihovny</strong><span>{libraryAnswer ? "Ověřeno pouze v dostupných podkladech" : "Odpověď se zobrazí po odeslání dotazu"}</span></div></div>
+      {libraryAnswer ? <><p style={{ maxWidth: 860, fontSize: 14, lineHeight: 1.7 }}>{libraryAnswer.answer}</p><div className="sources"><p>ZDROJE Z KNIHOVNY</p>{libraryAnswer.sources.length > 0 ? libraryAnswer.sources.map((source) => <div key={source} style={{ marginTop: 5, padding: 9, borderRadius: 7, background: "#f3f7f7", color: "#3d6278", fontSize: 11, fontWeight: 700 }}>{source}</div>) : <span className="no-sources">V odpovědi nebyl nalezen citovatelný zdroj.</span>}</div></> : <p className="answer-placeholder" style={{ color: "#71858f", margin: "22px 0 3px", fontSize: 14, lineHeight: 1.7 }}>Ptej se na konkrétní závadu, postup, chybový kód nebo zapojení. Asistent odpoví jen podle nahraných podkladů.</p>}
+    </section>
   </div>;
 }
 

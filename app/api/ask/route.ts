@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: getConfiguredModel(),
-        instructions: "Jsi servisní asistent pro tým Barnet & synové. Odpovídej česky. Pracuj pouze s informacemi dohledanými v servisní knihovně a s fotkou, pokud je přiložena. Nevymýšlej konkrétní hodnoty ani postupy. Pokud podklad nestačí, řekni to otevřeně a navrhni bezpečný další diagnostický krok. Vždy stručně uveď zdroje, které odpověď podpořily. Nikdy nenavrhuj obcházení bezpečnostních systémů stroje.",
+        instructions: "Jsi servisní asistent pro tým Barnet & synové. Odpovídej česky. Pracuj pouze s informacemi dohledanými v servisní knihovně a s fotkou, pokud je přiložena. Nevymýšlej konkrétní hodnoty ani postupy. Pokud podklad nestačí, řekni to otevřeně a navrhni bezpečný další diagnostický krok. Vždy stručně uveď zdroje, které odpověď podpořily. Pokud dotaz porovnává českou a anglickou verzi, odpověz ve zvláštních blocích „České znění“, „Anglické znění“ a „Rozdíl“; jejich obsah nikdy nespojuj ani nevydávej za doslovnou citaci, pokud jej podklad výslovně neuvádí. Nikdy nenavrhuj obcházení bezpečnostních systémů stroje.",
         input: [{ role: "user", content }],
         tools: [{ type: "file_search", vector_store_ids: [vectorStoreId], max_num_results: 5 }],
         include: ["file_search_call.results"],
