@@ -293,6 +293,17 @@ type LibraryFile = { id: string; fileName: string; sizeBytes: number; status: st
 
 function TestApiKeyGate({ testApiKey, onSetTestApiKey, onNotify }: { testApiKey: string; onSetTestApiKey: (value: string) => void; onNotify: (message: string) => void }) {
   const [draft, setDraft] = useState("");
+  const [serverMode, setServerMode] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/library").then((response) => response.json()).then((payload: { mode?: string }) => {
+      if (active) setServerMode(payload.mode === "server");
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  if (serverMode) return null;
 
   if (testApiKey) {
     return <section className="panel" style={{ marginTop: 18, padding: "22px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, flexWrap: "wrap", borderColor: "#cfe2d5" }}><div><p className="eyebrow">Testovací připojení</p><h2 style={{ margin: "0 0 7px", fontSize: 19 }}>AI je zapnutá jen pro tuto kartu</h2><p style={{ margin: 0, color: "#657f87", fontSize: 12, lineHeight: 1.5 }}>Klíč není uložený v aplikaci ani v databázi. Po obnovení nebo zavření karty se smaže.</p></div><button className="quiet-button" onClick={() => { onSetTestApiKey(""); onNotify("Testovací klíč byl z této karty odebrán."); }}>Odebrat klíč</button></section>;
