@@ -16,6 +16,13 @@ type Job = {
   tone: "blue" | "amber" | "green";
 };
 
+type AssistantMessage = {
+  id: string;
+  role: "assistant" | "user";
+  text: string;
+  sources?: string[];
+};
+
 const jobs: Job[] = [
   {
     id: "ZS-2026-184",
@@ -69,7 +76,7 @@ export default function Home() {
   const [selectedJob, setSelectedJob] = useState<Job>(jobs[0]);
   const [showNewJob, setShowNewJob] = useState(false);
   const [toast, setToast] = useState("");
-  const [assistantQuestion, setAssistantQuestion] = useState("Kolísání otáček po zahřátí motoru");
+  const [assistantQuestion, setAssistantQuestion] = useState("");
   const [testApiKey, setTestApiKey] = useState("");
 
   const notify = (message: string) => {
@@ -232,22 +239,50 @@ function JobDetail({ job, onNotify }: { job: Job; onNotify: (message: string) =>
 
 function Assistant({ question, onQuestion, onUse, testApiKey }: { question: string; onQuestion: (value: string) => void; onUse: (message: string) => void; testApiKey: string }) {
   const [attachment, setAttachment] = useState<{ name: string; url: string; dataUrl: string } | null>(null);
-  const [libraryAnswer, setLibraryAnswer] = useState<{ answer: string; sources: string[] } | null>(null);
+  const [messages, setMessages] = useState<AssistantMessage[]>([
+    {
+      id: "welcome",
+      role: "assistant",
+      text: "Popiš prosím závadu. Nejdřív si ověřím stroj, projevy závady a chybové kódy — až potom navrhnu postup podle servisní knihovny.",
+    },
+  ]);
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState("");
 
+  const resetConversation = () => {
+    setMessages([{ id: "welcome", role: "assistant", text: "Začneme znovu. Napiš značku a model stroje a stručně, co přesně se děje." }]);
+    setAttachment(null);
+    onQuestion("");
+    setAskError("");
+  };
+
   const askLibrary = async () => {
+    const trimmedQuestion = question.trim();
+    if (!trimmedQuestion || asking) return;
+
+    const textWithAttachment = attachment ? `${trimmedQuestion}\n[Mechanik přiložil fotku zapojení.]` : trimmedQuestion;
+    const userMessage: AssistantMessage = { id: `user-${Date.now()}`, role: "user", text: textWithAttachment };
+    const requestMessages = [...messages.filter((message) => message.id !== "welcome"), userMessage].map(({ role, text }) => ({ role, text }));
+    setMessages((previous) => [...previous, userMessage]);
+    onQuestion("");
     setAsking(true);
     setAskError("");
+
     try {
       const response = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(testApiKey ? { "X-OpenAI-API-Key": testApiKey } : {}) },
-        body: JSON.stringify({ question, imageDataUrl: attachment?.dataUrl }),
+        body: JSON.stringify({ question: trimmedQuestion, messages: requestMessages, imageDataUrl: attachment?.dataUrl }),
       });
       const payload = await response.json() as { answer?: string; sources?: string[]; error?: string };
       if (!response.ok) throw new Error(payload.error || "Asistent teď není dostupný.");
-      setLibraryAnswer({ answer: payload.answer || "Nenašel jsem odpověď.", sources: payload.sources || [] });
+      setMessages((previous) => [...previous, {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        text: payload.answer || "V nahrané knihovně jsem zatím nenašel dost podkladů pro bezpečnou odpověď.",
+        sources: payload.sources || [],
+      }]);
+      setAttachment(null);
       onUse("Asistent odpověděl podle nahrané knihovny.");
     } catch (error) {
       setAskError(error instanceof Error ? error.message : "Asistent teď není dostupný.");
@@ -256,36 +291,46 @@ function Assistant({ question, onQuestion, onUse, testApiKey }: { question: stri
     }
   };
 
-  return <div className="assistant-layout" style={{ gridTemplateColumns: "minmax(0, 1fr)", gap: 16, maxWidth: 1080 }}>
-    <section className="assistant-intro" style={{ minHeight: 0, padding: "27px 31px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, flexWrap: "wrap" }}>
-      <div className="assistant-title" style={{ display: "flex", alignItems: "center", gap: 17 }}>
-        <div className="ai-orb" style={{ margin: 0, flex: "0 0 auto" }}>✦</div>
-        <div>
-          <p className="eyebrow">Barnet servisní asistent</p>
-          <h2 style={{ margin: 0, fontSize: 27 }}>Najde řešení, <em>ne dohady.</em></h2>
-        </div>
+  return <div className="assistant-layout conversational-layout">
+    <section className="assistant-intro conversational-intro">
+      <div className="assistant-title">
+        <div className="ai-orb">✦</div>
+        <p className="eyebrow">Barnet servisní asistent</p>
+        <h2>Nejdřív se <em>správně zeptá.</em></h2>
+        <p>Pomůže mechanikovi popsat případ tak, aby dostal použitelný postup — ne obecnou odpověď na půl věty.</p>
       </div>
-      <p style={{ margin: 0, maxWidth: 430 }}>Vyhledává pouze v servisní dokumentaci a ověřených případech vašeho týmu. Každý návrh uvádí zdroj.</p>
+      <div className="trust-line"><span>✓</span> Každý technický návrh vychází ze zdrojů v knihovně</div>
     </section>
 
-    <section className="panel assistant-chat" style={{ padding: 18 }}>
-      <div className="chat-question">
-        <span>Vyhledat v dokumentaci a opravách</span>
-        <textarea style={{ minHeight: 80, fontSize: 15 }} value={question} onChange={(event) => onQuestion(event.target.value)} aria-label="Dotaz pro servisního asistenta" />
-        <div className="attachment-bar">
-          {!attachment ? <label className="attach-button">▧ Přiložit fotku zapojení<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { if (typeof reader.result === "string") setAttachment({ name: file.name, url: URL.createObjectURL(file), dataUrl: reader.result }); }; reader.readAsDataURL(file); }} /></label> : <div className="attachment-preview"><img src={attachment.url} alt="Náhled přiložené fotky" /><span><strong>{attachment.name}</strong><small>Fotka je přiložená k dotazu</small></span><button aria-label="Odebrat přiloženou fotku" onClick={() => setAttachment(null)}>×</button></div>}
-          <span className="attachment-hint">AI porovná fotku s manuálem a případy</span>
+    <section className="panel conversation-panel">
+      <div className="conversation-heading">
+        <div><p className="eyebrow">Diagnostický rozhovor</p><h2>Popiš případ, asistent se doptá.</h2></div>
+        <button className="quiet-button" onClick={resetConversation}>↻ Nový rozhovor</button>
+      </div>
+
+      <div className="conversation" aria-live="polite">
+        {messages.map((message) => <article className={`message ${message.role}`} key={message.id}>
+          <span>{message.role === "user" ? "Mechanik" : "Servisní asistent"}</span>
+          <p>{message.text}</p>
+          {message.role === "assistant" && message.sources && message.sources.length > 0 && <div className="message-sources"><strong>Zdroje v knihovně</strong>{message.sources.map((source) => <div key={source}>{source}</div>)}</div>}
+        </article>)}
+        {asking && <article className="message assistant loading-message"><span>Servisní asistent</span><p>Procházím popis případu a servisní knihovnu…</p></article>}
+      </div>
+
+      <div className="chat-composer">
+        <label className="composer-label" htmlFor="assistant-question">Další informace k případu</label>
+        <textarea id="assistant-question" value={question} onChange={(event) => onQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); void askLibrary(); } }} placeholder="Např. Valtra T235, po zahřátí kolísají otáčky, žádný chybový kód, začalo to dnes při práci s lisem." aria-label="Zpráva pro servisního asistenta" />
+        <div className="composer-actions">
+          {!attachment ? <label className="attach-button">▧ Přiložit fotku zapojení<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => { if (typeof reader.result === "string") setAttachment({ name: file.name, url: URL.createObjectURL(file), dataUrl: reader.result }); }; reader.readAsDataURL(file); }} /></label> : <div className="attachment-preview"><img src={attachment.url} alt="Náhled přiložené fotky" /><span><strong>{attachment.name}</strong><small>Fotka bude součástí této zprávy</small></span><button aria-label="Odebrat přiloženou fotku" onClick={() => setAttachment(null)}>×</button></div>}
+          <span className="composer-hint">Ctrl + Enter odešle zprávu</span>
+          <button className="primary-button" onClick={() => void askLibrary()} disabled={asking || !question.trim()}>{asking ? "Zjišťuji…" : "Odeslat →"}</button>
         </div>
-        <button className="send-button" onClick={askLibrary} disabled={asking} aria-label="Odeslat dotaz do servisní knihovny">{asking ? "…" : "↑"}</button>
       </div>
     </section>
 
     {askError && <div className="assistant-error" role="alert">{askError}</div>}
 
-    <section className="panel live-answer" style={{ marginTop: 0, padding: "25px 28px", minHeight: 170 }}>
-      <div className="answer-heading"><div className="mini-ai">✦</div><div><strong>Odpověď ze servisní knihovny</strong><span>{libraryAnswer ? "Ověřeno pouze v dostupných podkladech" : "Odpověď se zobrazí po odeslání dotazu"}</span></div></div>
-      {libraryAnswer ? <><p style={{ maxWidth: 860, fontSize: 14, lineHeight: 1.7 }}>{libraryAnswer.answer}</p><div className="sources"><p>ZDROJE Z KNIHOVNY</p>{libraryAnswer.sources.length > 0 ? libraryAnswer.sources.map((source) => <div key={source} style={{ marginTop: 5, padding: 9, borderRadius: 7, background: "#f3f7f7", color: "#3d6278", fontSize: 11, fontWeight: 700 }}>{source}</div>) : <span className="no-sources">V odpovědi nebyl nalezen citovatelný zdroj.</span>}</div></> : <p className="answer-placeholder" style={{ color: "#71858f", margin: "22px 0 3px", fontSize: 14, lineHeight: 1.7 }}>Ptej se na konkrétní závadu, postup, chybový kód nebo zapojení. Asistent odpoví jen podle nahraných podkladů.</p>}
-    </section>
+    <section className="panel intake-help"><strong>Co asistent typicky potřebuje:</strong><span>značku a model, popis projevu, kdy se závada objeví, chybové kódy a co už bylo ověřeno.</span></section>
   </div>;
 }
 
